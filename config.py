@@ -12,3 +12,6 @@ class Config:
     LOG_CHANNEL = int(os.getenv("LOG_CHANNEL", "-1002241432509"))
     ADMINS = [int(x) for x in os.getenv("ADMINS", "1033348373").split()]
     PICS = os.getenv("PICS", "https://i.ibb.co/VSLt4Xs/Whats-App-Image-2024-07-30-at-14-16-01-5055b0b2.jpg")
+
+
+
