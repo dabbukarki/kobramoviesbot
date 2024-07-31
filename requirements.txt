@@ -4,4 +4,4 @@ dnspython==2.1.0
 requests==2.25.1
 pyspellchecker==0.5.6
 python-dotenv==0.21.1
-tgcrypto"python-dotenv==0.21.1" 
+tgcrypto
