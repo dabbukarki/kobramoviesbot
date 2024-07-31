@@ -3,6 +3,15 @@ from config import Config
 from pymongo import MongoClient
 import random
 from spellchecker import SpellChecker
+from dotenv import load_dotenv
+import os
+from flask import Flask
+
+
+# Load environment variables from .env file
+load_dotenv()
+
+
 
 app = Client(
     "kobramoviesbot",
@@ -10,6 +19,20 @@ app = Client(
     api_hash=Config.API_HASH,
     bot_token=Config.BOT_TOKEN
 )
+
+
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Hello, World!"
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
+
+
 
 mongo_client = MongoClient(Config.DATABASE_URI)
 db = mongo_client[Config.DATABASE_NAME]

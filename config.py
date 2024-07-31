@@ -4,6 +4,12 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+
+
+
+# Load environment variables from .env file
+load_dotenv()
+
 class Config:
     API_ID = int(os.getenv("API_ID"))
     API_HASH = os.getenv("API_HASH")
@@ -16,5 +22,6 @@ class Config:
     LOG_CHANNEL = int(os.getenv("LOG_CHANNEL"))
     ADMINS = [int(x) for x in os.getenv("ADMINS").split()]
     PICS = os.getenv("PICS")
-
+    API_KEY = os.getenv('API_KEY')
+    DATABASE_URL = os.getenv('DATABASE_URL')
 
