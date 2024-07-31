@@ -18,19 +18,19 @@ def home():
     return "Hello, World!"
 
 # Initialize Pyrogram client
-bot = Client(
+pyrogram_app = Client(
     "kobramoviesbot",
     api_id=Config.API_ID,
     api_hash=Config.API_HASH,
     bot_token=Config.BOT_TOKEN
 )
 
-# Initialize MongoDB client and SpellChecker
+# Initialize MongoDB
 mongo_client = MongoClient(Config.DATABASE_URI)
 db = mongo_client[Config.DATABASE_NAME]
 spell = SpellChecker()
 
-@bot.on_message(filters.command(["start", "help"]))
+@pyrogram_app.on_message(filters.command(["start", "help"]))
 async def start(client, message):
     user_id = message.from_user.id
     user = db['users'].find_one({"user_id": user_id})
@@ -38,7 +38,7 @@ async def start(client, message):
         db['users'].insert_one({"user_id": user_id})
     await message.reply_text("Hello! I'm a movie search bot.")
 
-@bot.on_message(filters.command("broadcast") & filters.user(Config.ADMINS))
+@pyrogram_app.on_message(filters.command("broadcast") & filters.user(Config.ADMINS))
 async def broadcast_message(client, message):
     if len(message.command) < 2:
         await message.reply_text("Usage: /broadcast <message>")
@@ -55,7 +55,7 @@ async def broadcast_message(client, message):
     
     await message.reply_text("Broadcast message sent to all users.")
 
-@bot.on_message(filters.document | filters.video | filters.audio | filters.photo)
+@pyrogram_app.on_message(filters.document | filters.video | filters.audio | filters.photo)
 async def index_files(client, message):
     file_data = {
         "file_id": message.document.file_id if message.document else message.photo.file_id,
@@ -67,7 +67,7 @@ async def index_files(client, message):
     db['files'].insert_one(file_data)
     await message.reply_text(f"Indexed file: {file_data['file_name'] or 'Image'}")
 
-@bot.on_inline_query()
+@pyrogram_app.on_inline_query()
 async def inline_search(client, inline_query):
     query = inline_query.query.lower()
     results = []
@@ -85,19 +85,19 @@ async def inline_search(client, inline_query):
     
     await inline_query.answer(results)
 
-@bot.on_message(filters.command("randompic"))
+@pyrogram_app.on_message(filters.command("randompic"))
 async def random_pic(client, message):
     pics = db['files'].find({"file_type": "image"})
     pic = random.choice(list(pics))
     await client.send_photo(chat_id=message.chat.id, photo=pic["file_id"], caption=pic["caption"])
 
-@bot.on_message(filters.command("stats") & filters.user(Config.ADMINS))
+@pyrogram_app.on_message(filters.command("stats") & filters.user(Config.ADMINS))
 async def stats(client, message):
     user_count = db['users'].count_documents({})
     file_count = db['files'].count_documents({})
     await message.reply_text(f"Users: {user_count}\nFiles: {file_count}")
 
-@bot.on_message(filters.command("userinfo") & filters.user(Config.ADMINS))
+@pyrogram_app.on_message(filters.command("userinfo") & filters.user(Config.ADMINS))
 async def user_info(client, message):
     if len(message.command) < 2:
         await message.reply_text("Usage: /userinfo <user_id>")
@@ -110,7 +110,7 @@ async def user_info(client, message):
     else:
         await message.reply_text("User not found.")
 
-@bot.on_message(filters.command("spellcheck"))
+@pyrogram_app.on_message(filters.command("spellcheck"))
 async def spell_check(client, message):
     if len(message.command) < 2:
         await message.reply_text("Usage: /spellcheck <word>")
@@ -120,7 +120,7 @@ async def spell_check(client, message):
     correction = spell.correction(word)
     await message.reply_text(f"Correction: {correction}")
 
-@bot.on_message(filters.command("storefile"))
+@pyrogram_app.on_message(filters.command("storefile"))
 async def store_file(client, message):
     if len(message.command) < 2:
         await message.reply_text("Usage: /storefile <file_id>")
@@ -135,5 +135,7 @@ async def store_file(client, message):
         await message.reply_text("File stored successfully.")
 
 if __name__ == "__main__":
-    bot.run()
+    # Run Flask app
     flask_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+    # Run Pyrogram app
+    pyrogram_app.run()
