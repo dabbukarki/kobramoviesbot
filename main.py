@@ -6,18 +6,23 @@ from spellchecker import SpellChecker
 from dotenv import load_dotenv
 import os
 from flask import Flask
+import threading
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Initialize Flask app
-flask_app = Flask(__name__)
+# Flask setup
+app = Flask(__name__)
 
-@flask_app.route('/')
+@app.route('/')
 def home():
     return "Hello, World!"
 
-# Initialize Pyrogram client
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
+
+# Pyrogram setup
 pyrogram_app = Client(
     "kobramoviesbot",
     api_id=Config.API_ID,
@@ -25,7 +30,6 @@ pyrogram_app = Client(
     bot_token=Config.BOT_TOKEN
 )
 
-# Initialize MongoDB
 mongo_client = MongoClient(Config.DATABASE_URI)
 db = mongo_client[Config.DATABASE_NAME]
 spell = SpellChecker()
@@ -134,8 +138,7 @@ async def store_file(client, message):
         db['files'].insert_one({"file_id": file_id, "file_name": None, "file_size": None, "file_type": "unknown", "caption": ""})
         await message.reply_text("File stored successfully.")
 
+# Run Flask and Pyrogram clients in separate threads
 if __name__ == "__main__":
-    # Run Flask app
-    flask_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
-    # Run Pyrogram app
+    threading.Thread(target=run_flask).start()
     pyrogram_app.run()
