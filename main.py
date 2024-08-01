@@ -34,55 +34,66 @@ mongo_client = MongoClient(Config.DATABASE_URI)
 db = mongo_client[Config.DATABASE_NAME]
 spell = SpellChecker()
 
-# Command Handling
-
 @pyrogram_app.on_message(filters.command(["start", "help"]))
 async def start(client, message):
-    help_text = (
-        "Hello! I'm a movie search bot.\n\n"
-        "Here are the available commands:\n\n"
-        "/search <query> - Search for movies by caption\n"
-        "/randompic - Get a random movie picture\n"
-        "/spellcheck <word> - Check the spelling of a word\n"
-        "/stats - Get bot statistics (admin only)\n"
-        "/userinfo <user_id> - Get user information (admin only)\n"
-        "/storefile <file_id> - Store a file by its ID\n\n"
-        "Use these commands to interact with the bot and explore our movie database!"
-    )
-    await message.reply_text(help_text)
+    user_id = message.from_user.id
+    user = db['users'].find_one({"user_id": user_id})
+    if not user:
+        db['users'].insert_one({"user_id": user_id})
+    await message.reply_text("Hello! I'm a movie search bot.")
 
-@pyrogram_app.on_message(filters.command("search"))
-async def search(client, message):
+@pyrogram_app.on_message(filters.command("broadcast") & filters.user(Config.ADMINS))
+async def broadcast_message(client, message):
     if len(message.command) < 2:
-        await message.reply_text("Usage: /search <query>")
+        await message.reply_text("Usage: /broadcast <message>")
         return
     
-    query = message.command[1].lower()
-    results = db['files'].find({"caption": {"$regex": query, "$options": "i"}})
+    broadcast_text = message.text.split(" ", 1)[1]
     
-    if results.count() == 0:
-        await message.reply_text("No results found for your query.")
-    else:
-        response = "Search results:\n\n"
-        for file in results:
-            response += f"- {file['file_name'] or 'Image'}: {file['caption']}\n"
-        await message.reply_text(response)
+    users = db['users'].find()
+    for user in users:
+        try:
+            await client.send_message(chat_id=user['user_id'], text=broadcast_text)
+        except Exception as e:
+            print(f"Failed to send message to {user['user_id']}: {e}")
+    
+    await message.reply_text("Broadcast message sent to all users.")
+
+@pyrogram_app.on_message(filters.document | filters.video | filters.audio | filters.photo)
+async def index_files(client, message):
+    file_data = {
+        "file_id": message.document.file_id if message.document else message.photo.file_id,
+        "file_name": message.document.file_name if message.document else None,
+        "file_size": message.document.file_size if message.document else None,
+        "file_type": message.document.mime_type if message.document else "image",
+        "caption": message.caption if message.caption else ""
+    }
+    db['files'].insert_one(file_data)
+    await message.reply_text(f"Indexed file: {file_data['file_name'] or 'Image'}")
+
+@pyrogram_app.on_inline_query()
+async def inline_search(client, inline_query):
+    query = inline_query.query.lower()
+    results = []
+
+    files = db['files'].find({"caption": {"$regex": query, "$options": "i"}})
+    for file in files:
+        result = {
+            "type": "document" if file["file_type"] != "image" else "photo",
+            "id": file["file_id"],
+            "document_file_id": file["file_id"],
+            "title": file["file_name"] or "Image",
+            "description": file["caption"]
+        }
+        results.append(result)
+    
+    await inline_query.answer(results)
 
 @pyrogram_app.on_message(filters.command("randompic"))
 async def random_pic(client, message):
     pics = db['files'].find({"file_type": "image"})
     pic = random.choice(list(pics))
     await client.send_photo(chat_id=message.chat.id, photo=pic["file_id"], caption=pic["caption"])
-
-@pyrogram_app.on_message(filters.command("spellcheck"))
-async def spell_check(client, message):
-    if len(message.command) < 2:
-        await message.reply_text("Usage: /spellcheck <word>")
-        return
-    
-    word = message.command[1]
-    correction = spell.correction(word)
-    await message.reply_text(f"Correction: {correction}")
 
 @pyrogram_app.on_message(filters.command("stats") & filters.user(Config.ADMINS))
 async def stats(client, message):
@@ -102,6 +113,16 @@ async def user_info(client, message):
         await message.reply_text(f"User ID: {user['user_id']}")
     else:
         await message.reply_text("User not found.")
+
+@pyrogram_app.on_message(filters.command("spellcheck"))
+async def spell_check(client, message):
+    if len(message.command) < 2:
+        await message.reply_text("Usage: /spellcheck <word>")
+        return
+    
+    word = message.command[1]
+    correction = spell.correction(word)
+    await message.reply_text(f"Correction: {correction}")
 
 @pyrogram_app.on_message(filters.command("storefile"))
 async def store_file(client, message):
