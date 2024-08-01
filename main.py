@@ -2,11 +2,15 @@ from pyrogram import Client, filters
 from config import Config
 from pymongo import MongoClient
 import random
-from spellchecker import SpellChecker
+# from spellchecker import SpellChecker # Commented out due to missing module
 from dotenv import load_dotenv
 import os
 from flask import Flask
 import threading
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -19,20 +23,34 @@ def home():
     return "Hello, World!"
 
 def run_flask():
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    try:
+        port = int(os.environ.get("PORT", 5000))
+        app.run(host='0.0.0.0', port=port)
+    except Exception as e:
+        logging.error("Error in Flask app: %s", e)
 
 # Pyrogram setup
-pyrogram_app = Client(
-    "kobramoviesbot",
-    api_id=Config.API_ID,
-    api_hash=Config.API_HASH,
-    bot_token=Config.BOT_TOKEN
-)
+try:
+    pyrogram_app = Client(
+        "kobramoviesbot",
+        api_id=os.getenv("API_ID"),
+        api_hash=os.getenv("API_HASH"),
+        bot_token=os.getenv("BOT_TOKEN")
+    )
+    logging.info("Pyrogram Client initialized successfully.")
+except Exception as e:
+    logging.error("Error initializing Pyrogram Client: %s", e)
+    raise
 
-mongo_client = MongoClient(Config.DATABASE_URI)
-db = mongo_client[Config.DATABASE_NAME]
-spell = SpellChecker()
+try:
+    mongo_client = MongoClient(os.getenv("DATABASE_URI"))
+    db = mongo_client[os.getenv("DATABASE_NAME")]
+    logging.info("MongoDB Client initialized successfully.")
+except Exception as e:
+    logging.error("Error initializing MongoDB Client: %s", e)
+    raise
+
+# spell = SpellChecker() # Commented out due to missing module
 
 @pyrogram_app.on_message(filters.command(["start", "help"]))
 async def start(client, message):
@@ -40,7 +58,22 @@ async def start(client, message):
     user = db['users'].find_one({"user_id": user_id})
     if not user:
         db['users'].insert_one({"user_id": user_id})
-    await message.reply_text("Hello! I'm a movie search bot.")
+    await message.reply_text("Hello! I'm a movie search bot.\n\nCommands:\n/search <query> - Search for movies\n/broadcast <message> - Send a broadcast message\n/randompic - Get a random picture\n/stats - Get bot statistics\n/userinfo <user_id> - Get user info\n/spellcheck <word> - Check spelling\n/storefile <file_id> - Store a file")
+
+@pyrogram_app.on_message(filters.command("search"))
+async def search(client, message):
+    if len(message.command) < 2:
+        await message.reply_text("Usage: /search <query>")
+        return
+    
+    query = message.command[1]
+    results = db['files'].find({"caption": {"$regex": query, "$options": "i"}})
+    if results.count() == 0:
+        await message.reply_text("No results found.")
+        return
+    
+    for result in results:
+        await message.reply_text(f"Found: {result['caption']}")
 
 @pyrogram_app.on_message(filters.command("broadcast") & filters.user(Config.ADMINS))
 async def broadcast_message(client, message):
@@ -55,43 +88,17 @@ async def broadcast_message(client, message):
         try:
             await client.send_message(chat_id=user['user_id'], text=broadcast_text)
         except Exception as e:
-            print(f"Failed to send message to {user['user_id']}: {e}")
+            logging.error("Failed to send message to %s: %s", user['user_id'], e)
     
     await message.reply_text("Broadcast message sent to all users.")
-
-@pyrogram_app.on_message(filters.document | filters.video | filters.audio | filters.photo)
-async def index_files(client, message):
-    file_data = {
-        "file_id": message.document.file_id if message.document else message.photo.file_id,
-        "file_name": message.document.file_name if message.document else None,
-        "file_size": message.document.file_size if message.document else None,
-        "file_type": message.document.mime_type if message.document else "image",
-        "caption": message.caption if message.caption else ""
-    }
-    db['files'].insert_one(file_data)
-    await message.reply_text(f"Indexed file: {file_data['file_name'] or 'Image'}")
-
-@pyrogram_app.on_inline_query()
-async def inline_search(client, inline_query):
-    query = inline_query.query.lower()
-    results = []
-
-    files = db['files'].find({"caption": {"$regex": query, "$options": "i"}})
-    for file in files:
-        result = {
-            "type": "document" if file["file_type"] != "image" else "photo",
-            "id": file["file_id"],
-            "document_file_id": file["file_id"],
-            "title": file["file_name"] or "Image",
-            "description": file["caption"]
-        }
-        results.append(result)
-    
-    await inline_query.answer(results)
 
 @pyrogram_app.on_message(filters.command("randompic"))
 async def random_pic(client, message):
     pics = db['files'].find({"file_type": "image"})
+    if pics.count() == 0:
+        await message.reply_text("No pictures found.")
+        return
+    
     pic = random.choice(list(pics))
     await client.send_photo(chat_id=message.chat.id, photo=pic["file_id"], caption=pic["caption"])
 
@@ -121,8 +128,9 @@ async def spell_check(client, message):
         return
     
     word = message.command[1]
-    correction = spell.correction(word)
-    await message.reply_text(f"Correction: {correction}")
+    # correction = spell.correction(word) # Commented out due to missing module
+    # await message.reply_text(f"Correction: {correction}")
+    await message.reply_text("Spellcheck feature is currently disabled.")
 
 @pyrogram_app.on_message(filters.command("storefile"))
 async def store_file(client, message):
@@ -138,7 +146,9 @@ async def store_file(client, message):
         db['files'].insert_one({"file_id": file_id, "file_name": None, "file_size": None, "file_type": "unknown", "caption": ""})
         await message.reply_text("File stored successfully.")
 
-# Run Flask and Pyrogram clients in separate threads
 if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
-    pyrogram_app.run()
+    try:
+        threading.Thread(target=run_flask).start()
+        pyrogram_app.run()
+    except Exception as e:
+        logging.error("Error running the bot: %s", e)
